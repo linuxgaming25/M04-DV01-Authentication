@@ -1,0 +1,5 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+* text eol=lf
+*.vsconfig text eol=lf    # Force LF line endings
+*.vsconfig text eol=crlf  # Force CRLF line endings
