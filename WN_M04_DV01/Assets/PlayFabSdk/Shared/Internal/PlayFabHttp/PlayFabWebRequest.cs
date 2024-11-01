@@ -10,7 +10,6 @@ using PlayFab.SharedModels;
 #if !DISABLE_PLAYFABCLIENT_API
 using PlayFab.ClientModels;
 #endif
-using PlayFab.Json;
 
 namespace PlayFab.Internal
 {
@@ -252,7 +251,11 @@ namespace PlayFab.Internal
                             case HttpRequestState.Idle:
                                 Post(localActiveRequests[i]); break;
                             case HttpRequestState.Sent:
-                                if (localActiveRequests[i].HttpRequest.HaveResponse) // Else we'll try again next tick
+                                if (!localActiveRequests[i].CalledGetResponse) { // Else we'll GetResponse try again next tick
+                                    localActiveRequests[i].HttpRequest.GetResponseAsync();
+                                    localActiveRequests[i].CalledGetResponse = true;
+                                }
+                                else if (localActiveRequests[i].HttpRequest.HaveResponse)
                                     ProcessHttpResponse(localActiveRequests[i]);
                                 break;
                             case HttpRequestState.Received:
@@ -421,7 +424,10 @@ namespace PlayFab.Internal
                 reqContainer.ApiResult.Request = reqContainer.ApiRequest;
                 reqContainer.ApiResult.CustomData = reqContainer.CustomData;
 
-                PlayFabHttp.instance.OnPlayFabApiResult(reqContainer);
+                if(_isApplicationPlaying)
+                {
+                    PlayFabHttp.instance.OnPlayFabApiResult(reqContainer);
+                }
 
 #if !DISABLE_PLAYFABCLIENT_API
                 lock (ResultQueueTransferThread)

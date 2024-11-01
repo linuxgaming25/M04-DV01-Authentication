@@ -6,7 +6,7 @@ namespace PlayFab
         {
         }
 
-        public PlayFabAuthenticationContext(string clientSessionTicket, string entityToken, string playFabId, string entityId, string entityType) : this()
+        public PlayFabAuthenticationContext(string clientSessionTicket, string entityToken, string playFabId, string entityId, string entityType, string telemetryKey = null) : this()
         {
 #if !DISABLE_PLAYFABCLIENT_API
             ClientSessionTicket = clientSessionTicket;
@@ -17,6 +17,7 @@ namespace PlayFab
             EntityId = entityId;
             EntityType = entityType;
 #endif
+            TelemetryKey = telemetryKey;
         }
 
         public void CopyFrom(PlayFabAuthenticationContext other)
@@ -30,6 +31,7 @@ namespace PlayFab
             EntityId = other.EntityId;
             EntityType = other.EntityType;
 #endif
+            TelemetryKey = other.TelemetryKey;
         }
 
 #if !DISABLE_PLAYFABCLIENT_API
@@ -61,10 +63,17 @@ namespace PlayFab
         }
 #endif
 
+        public string TelemetryKey;
+
+        public bool IsTelemetryKeyProvided()
+        {
+            return !string.IsNullOrEmpty(TelemetryKey);
+        }
+
         public void ForgetAllCredentials()
         {
-            PlayFabId = null;
 #if !DISABLE_PLAYFABCLIENT_API
+            PlayFabId = null;
             ClientSessionTicket = null;
 #endif
 #if !DISABLE_PLAYFABENTITY_API
@@ -72,6 +81,7 @@ namespace PlayFab
             EntityId = null;
             EntityType = null;
 #endif
+            TelemetryKey = null;
         }
     }
 }

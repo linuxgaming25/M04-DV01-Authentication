@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
-using PlayFab.Json;
 using PlayFab.Public;
 using PlayFab.SharedModels;
 using UnityEngine;
@@ -61,8 +60,6 @@ namespace PlayFab.Internal
             var transport = PluginManager.GetPlugin<ITransportPlugin>(PluginContract.PlayFab_Transport);
             if (transport.IsInitialized)
                 return;
-
-            Application.runInBackground = true; // Http requests respond even if you lose focus
 
             transport.Initialize();
             CreateInstance(); // Invoke the SingletonMonoBehaviour
@@ -187,7 +184,7 @@ namespace PlayFab.Internal
             reqContainer.RequestHeaders["X-PlayFabSDK"] = PlayFabSettings.VersionString; // Tell PlayFab which SDK this is
             switch (authType)
             {
-#if ENABLE_PLAYFABSERVER_API || ENABLE_PLAYFABADMIN_API || UNITY_EDITOR
+#if ENABLE_PLAYFABSERVER_API || ENABLE_PLAYFABADMIN_API || UNITY_EDITOR || ENABLE_PLAYFAB_SECRETKEY
                 case AuthType.DevSecretKey:
                     if (apiSettings.DeveloperSecretKey == null) throw new PlayFabException(PlayFabExceptionCode.DeveloperKeyNotSet, "DeveloperSecretKey is not found in Request, Server Instance or PlayFabSettings");
                     reqContainer.RequestHeaders["X-SecretKey"] = apiSettings.DeveloperSecretKey; break;
@@ -204,6 +201,10 @@ namespace PlayFab.Internal
                         reqContainer.RequestHeaders["X-EntityToken"] = authenticationContext.EntityToken;
                     break;
 #endif
+                case AuthType.TelemetryKey:
+                    if (authenticationContext != null)
+                        reqContainer.RequestHeaders["X-TelemetryKey"] = authenticationContext.TelemetryKey;
+                    break;
             }
 
             // These closures preserve the TResult generic information in a way that's safe for all the devices
@@ -240,11 +241,13 @@ namespace PlayFab.Internal
             var result = reqContainer.ApiResult;
 
 #if !DISABLE_PLAYFABENTITY_API
+
             var entRes = result as AuthenticationModels.GetEntityTokenResponse;
             if (entRes != null)
             {
                 PlayFabSettings.staticPlayer.EntityToken = entRes.EntityToken;
             }
+
 #endif
 #if !DISABLE_PLAYFABCLIENT_API
             var logRes = result as ClientModels.LoginResult;
@@ -383,13 +386,13 @@ namespace PlayFab.Internal
         #region Helpers
         protected internal static PlayFabError GeneratePlayFabError(string apiEndpoint, string json, object customData)
         {
-            JsonObject errorDict = null;
+            Dictionary<string, object> errorDict = null;
             Dictionary<string, List<string>> errorDetails = null;
             var serializer = PluginManager.GetPlugin<ISerializerPlugin>(PluginContract.PlayFab_Serializer);
             try
             {
                 // Deserialize the error
-                errorDict = serializer.DeserializeObject<JsonObject>(json);
+                errorDict = serializer.DeserializeObject<Dictionary<string, object>>(json);
             }
             catch (Exception) { /* Unusual, but shouldn't actually matter */ }
             try
@@ -408,7 +411,8 @@ namespace PlayFab.Internal
                 Error = errorDict != null && errorDict.ContainsKey("errorCode") ? (PlayFabErrorCode)Convert.ToInt32(errorDict["errorCode"]) : PlayFabErrorCode.ServiceUnavailable,
                 ErrorMessage = errorDict != null && errorDict.ContainsKey("errorMessage") ? (string)errorDict["errorMessage"] : json,
                 ErrorDetails = errorDetails,
-                CustomData = customData
+                CustomData = customData,
+                RetryAfterSeconds = errorDict != null && errorDict.ContainsKey("retryAfterSeconds") ? Convert.ToUInt32(errorDict["retryAfterSeconds"]) : (uint?)null,
             };
         }
 
@@ -447,7 +451,7 @@ namespace PlayFab.Internal
             }
         }
 
-        protected internal static void ClearAllEvents()
+        public static void ClearAllEvents()
         {
             ApiProcessingEventHandler = null;
             ApiProcessingErrorEventHandler = null;

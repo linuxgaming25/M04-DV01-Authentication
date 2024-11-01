@@ -29,29 +29,57 @@ namespace PlayFab
 
     public static class PlayFabSettings
     {
-        static PlayFabSettings() { }
+        static PlayFabSettings() 
+        {
+#if UNITY_GAMECORE || UNITY_GAMECORE_XBOXONE || UNITY_GAMECORE_SCARLETT || MICROSOFT_GAME_CORE
+            PlatformString = "GDK";
+#else
+        switch (Application.platform)
+        {
+            case RuntimePlatform.WindowsEditor:
+            case RuntimePlatform.WindowsPlayer:
+            case RuntimePlatform.WindowsServer:
+                PlatformString = "Windows";
+                break;
+
+            case RuntimePlatform.IPhonePlayer:
+                PlatformString = "iOS";
+                break;
+
+            default:
+                PlatformString = Application.platform.ToString();
+                break;
+        }
+#endif
+        }
 
         private static PlayFabSharedSettings _playFabShared = null;
         private static PlayFabSharedSettings PlayFabSharedPrivate { get { if (_playFabShared == null) _playFabShared = GetSharedSettingsObjectPrivate(); return _playFabShared; } }
-        internal static readonly PlayFabApiSettings staticSettings = new PlayFabSettingsRedirect(() => { return PlayFabSharedPrivate; });
 
-        // This field will likely be removed someday
-        internal readonly static PlayFabAuthenticationContext staticPlayer = new PlayFabAuthenticationContext();
+        /// <summary>
+        /// Global settings used by all static API classes, and as the default for all instance API classes
+        /// </summary>
+        public static readonly PlayFabApiSettings staticSettings = new PlayFabSettingsRedirect(() => { return PlayFabSharedPrivate; });
+        /// <summary>
+        /// Global user for all static API classes
+        /// </summary>
+        public static readonly PlayFabAuthenticationContext staticPlayer = new PlayFabAuthenticationContext();
 
-        public const string SdkVersion = "2.69.190625";
-        public const string BuildIdentifier = "jbuild_unitysdk__sdk-unity-3-slave_0";
-        public const string VersionString = "UnitySDK-2.69.190625";
-        public const string AD_TYPE_IDFA = "Idfa";
-        public const string AD_TYPE_ANDROID_ID = "Adid";
+        public const string SdkVersion = "2.204.241025";
+        public const string BuildIdentifier = "adobuild_unitysdk_167";
+        public const string VersionString = "UnitySDK-2.204.241025";
+        public static string EngineVersion = UnityEngine.Application.unityVersion;
+        public static string PlatformString;
 
-        internal const string DefaultPlayFabApiUrl = "playfabapi.com";
+        public const string DefaultPlayFabApiUrl = "playfabapi.com";
 
         private static PlayFabSharedSettings GetSharedSettingsObjectPrivate()
         {
             var settingsList = Resources.LoadAll<PlayFabSharedSettings>("PlayFabSharedSettings");
             if (settingsList.Length != 1)
             {
-                throw new Exception("The number of PlayFabSharedSettings objects should be 1: " + settingsList.Length);
+                Debug.LogWarning("The number of PlayFabSharedSettings objects should be 1: " + settingsList.Length);
+                Debug.LogWarning("If you are upgrading your SDK, you can ignore this warning as PlayFabSharedSettings will be imported soon. If you are not upgrading your SDK and you see this message, you should re-download the latest PlayFab source code.");
             }
             return settingsList[0];
         }
@@ -80,13 +108,12 @@ namespace PlayFab
         #region staticSettings Redirects
         // You must set this value for PlayFabSdk to work properly (Found in the Game Manager for your title, at the PlayFab Website)
         public static string TitleId { get { return staticSettings.TitleId; } set { staticSettings.TitleId = value; } }
+
         /// <summary> The name of a customer vertical. This is only for customers running a private cluster.  Generally you shouldn't touch this </summary>
         internal static string VerticalName { get { return staticSettings.VerticalName; } set { staticSettings.VerticalName = value; } }
-#if ENABLE_PLAYFABSERVER_API || ENABLE_PLAYFABADMIN_API || UNITY_EDITOR
+#if ENABLE_PLAYFABSERVER_API || ENABLE_PLAYFABADMIN_API || UNITY_EDITOR || ENABLE_PLAYFAB_SECRETKEY
         public static string DeveloperSecretKey { get { return staticSettings.DeveloperSecretKey; } set { staticSettings.DeveloperSecretKey = value; } }
 #endif
-        /// <summary> Set this to true to prevent IDFA from leaving the device </summary>
-        public static bool DisableAdvertising { get { return staticSettings.DisableAdvertising; } set { staticSettings.DisableAdvertising = value; } }
         /// <summary> Set this to true to prevent hardware information from leaving the device </summary>
         public static bool DisableDeviceInfo { get { return staticSettings.DisableDeviceInfo; } set { staticSettings.DisableDeviceInfo = value; } }
         /// <summary> Set this to true to prevent focus change information from leaving the device </summary>
@@ -102,7 +129,6 @@ namespace PlayFab
         public static WebRequestType RequestType { get { return PlayFabSharedPrivate.RequestType; } set { PlayFabSharedPrivate.RequestType = value; } }
         public static int RequestTimeout { get { return PlayFabSharedPrivate.RequestTimeout; } set { PlayFabSharedPrivate.RequestTimeout = value; } }
         public static bool RequestKeepAlive { get { return PlayFabSharedPrivate.RequestKeepAlive; } set { PlayFabSharedPrivate.RequestKeepAlive = value; } }
-        public static bool CompressApiData { get { return PlayFabSharedPrivate.CompressApiData; } set { PlayFabSharedPrivate.CompressApiData = value; } }
         public static string LoggerHost { get { return PlayFabSharedPrivate.LoggerHost; } set { PlayFabSharedPrivate.LoggerHost = value; } }
         public static int LoggerPort { get { return PlayFabSharedPrivate.LoggerPort; } set { PlayFabSharedPrivate.LoggerPort = value; } }
         public static bool EnableRealTimeLogging { get { return PlayFabSharedPrivate.EnableRealTimeLogging; } set { PlayFabSharedPrivate.EnableRealTimeLogging = value; } }
@@ -127,26 +153,46 @@ namespace PlayFab
             }
         }
 
+        [ThreadStatic]
+        private static StringBuilder _cachedStringBuilder;
+
+        private static StringBuilder AcquireStringBuilder()
+        {
+            if (_cachedStringBuilder == null)
+            {
+                _cachedStringBuilder = new StringBuilder(1000);
+            }
+
+            _cachedStringBuilder.Clear();
+            return _cachedStringBuilder;
+        }
+
         public static string GetFullUrl(string apiCall, Dictionary<string, string> getParams, PlayFabApiSettings apiSettings = null)
         {
-            StringBuilder sb = new StringBuilder(1000);
+            StringBuilder sb = AcquireStringBuilder();
 
             string productionEnvironmentUrl = null, verticalName = null, titleId = null;
+
             if (apiSettings != null)
             {
-                if (!string.IsNullOrEmpty(apiSettings.ProductionEnvironmentUrl))
-                {
-                    productionEnvironmentUrl = apiSettings.ProductionEnvironmentUrl;
-                }
-                if (!string.IsNullOrEmpty(apiSettings.VerticalName))
-                {
-                    verticalName = apiSettings.VerticalName;
-                }
-                if (!string.IsNullOrEmpty(apiSettings.TitleId))
-                {
-                    titleId = apiSettings.TitleId;
-                }
+
+                    if (!string.IsNullOrEmpty(apiSettings.ProductionEnvironmentUrl))
+                    {
+                        productionEnvironmentUrl = apiSettings.ProductionEnvironmentUrl;
+                    }
+                    if (!string.IsNullOrEmpty(apiSettings.VerticalName))
+                    {
+                        verticalName = apiSettings.VerticalName;
+                    }
+                    if (!string.IsNullOrEmpty(apiSettings.TitleId))
+                    {
+                        titleId = apiSettings.TitleId;
+                    }
+
             }
+
+
+
             if (productionEnvironmentUrl == null)
             {
                 productionEnvironmentUrl = !string.IsNullOrEmpty(PlayFabSharedPrivate.ProductionEnvironmentUrl) ? PlayFabSharedPrivate.ProductionEnvironmentUrl : DefaultPlayFabApiUrl;
@@ -176,9 +222,9 @@ namespace PlayFab
 
             sb.Append(baseUrl).Append(apiCall);
 
+            bool firstParam = true;
             if (getParams != null)
             {
-                bool firstParam = true;
                 foreach (var paramPair in getParams)
                 {
                     if (firstParam)
@@ -193,6 +239,10 @@ namespace PlayFab
                     sb.Append(paramPair.Key).Append("=").Append(paramPair.Value);
                 }
             }
+
+            sb.Append(firstParam ? "?" : "&");
+            sb.Append("engine=").Append(EngineVersion);
+            sb.Append("&platform=").Append(PlatformString);
 
             return sb.ToString();
         }
